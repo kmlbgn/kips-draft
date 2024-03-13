@@ -1,0 +1,63 @@
+---
+title: KIP-72 - Universal Basic Income (1)
+sidebar_position: 4
+slug: /ea09f951-10b0-4474-9bf7-f328a4479023
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+
+## Universal Basic Income {#36a2c493c294409494d734ef1b92843c}
+
+
+The `UBI` is an incentivisation model in which every non-sybil network participant such as validator or governance member can earn a fixed amount of the native `KEX` token every defined period of time, enabling said actor to perform its role and ensure long term maintenance of the network operations.
+
+
+Goal of this proposal is to create mechanism which can inflate supply of the `KEX` token by a fixed amount every fixed period of time and deposit said amount into one or many spending pools[broken link] from where various beneficiaries can claim their their fund (`UBI`). The 
+
+
+To prevent abuse and potential faults of the `UBI` module by the governance, a `ubi-hard-cap` network property[broken link] should be defined, a maximum amount of additional `KEX` that can be created per year (`31,556,952 seconds`). Governance should NOT be able to create new or modify old `UBI` record in such a way, that the sum of all `KEX` distribution rates of all records would exceed `ubi-hard-cap`.
+
+
+_NOTE: The bank module should reflect correct amount of tokens, so that newly minted coins are added to the total supply as per relevant bank module registry_ 
+
+
+### Implementation {#6a3019d0e248455582721544eb3c4aa0}
+
+
+Create a Universal Basic Income Registry with associated identifiers mapping to a list of properties defining distribution rules:
+
+
+```bash
+<ubi-name-1>: {
+		distribution-start: <unix-timestamp>,
+    distribution-end: <unix-timestamp>,
+    distribution-last: <unix-timestamp>,
+    amount: <uint>,
+		period: <seconds>,
+    pool: <string>
+},
+<ubi-name-2>: { ... }, ...
+```
+
+- `distribution-start` & `distribution-end` - defines the exact time period (Unix timestamps) between which tokens will be distributed to the pool, allowing for a precise funds spending.
+- `distribution-last`- timestamp of the last distribution
+- `amount` - the amount of `KEX` tokens to be minted and distributed every `period` number of seconds into `pool`
+- `period` - time in seconds that must elapse since`distribution-last` for the funds to be distributed automatically into `pool`
+- `pool` - spending pool name where exact `amount` of `KEX` should be deposited
+
+### Functions {#c28f36ca86c7401badd282828c1f2c61}
+
+- `proposal-upsert-ubi`- a proposal to create a new or modify existing `UBI` registry record. The proposal should fail if sum of all `((float)amount / period) * 31556952` for all `UBI` records is greater than `ubi-hard-cap`.
+- `proposal-remove-ubi` - a proposal to delete `UBI` record
+- `query-ubi-records` - query names of all `UBI`records
+- `query-ubi-record` - query specific `UBI`record by name
+
+### Notes {#a0cbc017493a49cfaf8b4494d6a203b0}
+
+- We need to make one very important fix to UBI, that is create a dynamic field (bool, default false) that defines if UBI is dynamic (true) or static (false).
+	- If the UBI is dynamic then we will only distribute to the spending pool a difference between what is already in the spending pool still waiting to be claimed and what is already there.
+	- If the UBI is NOT dynamic then we just send a fixed amount every time period.
+	- This way we can limit the inflation of the token, since some people registered in the spending pool might not be claiming their coins regularly. If they miss their claim window they should not be getting anything for missed periods.

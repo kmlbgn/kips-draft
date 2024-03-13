@@ -1,0 +1,204 @@
+---
+title: KIP-76 - Collaborative Custody (1)
+sidebar_position: 0
+slug: /374d5951-25c9-4951-8ca7-24cc8a1751b4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+
+## Collaborative Custody Module & Account Protection {#0573b387353443f08547087751b04ad1}
+
+
+### Overview {#cb55fe5ee65243249796a14e51372a14}
+
+
+One of the most elemental “smart features” that decentralized networks can assist their users with is to provide tools for protecting their funds. Managing your own private keys is difficult and exposes the user to many risks, such as sending assets to the source that was not intended. The simplest way to provide the user with the extra layer of protection is a collaborative custody - that is allow the user to send transactions, but only with one or many (configurable) third party approvals. The collaborative custody differs from the n/m multi-signatures by making it impossible for third parties to move the assets (or otherwise propagate tx) without the original owner of the assets initiating the transactions.
+
+
+The second layer of account protection in this task will be to create mechanism where token transfers can occur only when recipient of funds submits a secret - shared to him off-chain by the sender, if the funds are not claimed within predefined time period they will be returned back to the sender account. This mechanism combined with collaborative custody will ensure that both the sender and the recipient can be verified in more than one way. 
+
+
+The third layer of account protection would be a withdraw whitelist & transfer limits, meaning that account can NOT transfer tokens unless the beneficiary address is included in the whitelist and the withdraw limit is not hit. The whitelist & limits can be protected by secrets, effectively preventing transfers to malicious accounts in the case where private key is compromised as well as limiting the amount that can be stolen even if both the private key and the secrets are compromised.
+
+
+### Logic Flow {#1aeeed63c45c442ca1acba8dce112f1e}
+
+
+#### I. Enabling Custody & Registering Custodians {#b8afc841f8b34370862cc86ab77a8fa7}
+
+
+We should allow user to enable custody mode by providing a list of accounts which approval will be required for the network to accept transactions signed by the account holder. Once the list of accounts is submitted a separate transaction should be used to “lock them in”, meaning that it should not be possible to change the set of custodians unless the custodians themselve allow that or a “secret” `S` is provided in form of the `S == SHA256(SHA256(secret))` hash. Secret can be considered to be an equivalent to a private key and if it’s lost it will never be possible to change the custodians set or otherwise disable the custody mode. In order to disable the custody mode user will have to send the “disable custody transaction” containing value `X`, such that `SHA256(X) == S`. Hashing of the original secret will ensure that its original plaintext value will never be revealed to the network. The original secret should also be combined with a publicly known `nonce`, so that `S == SHA256(SHA256(secret + nonce))` which should result in constantly changing hash and make it impossible to know if the user is reusing the same secret over and over again or not. 
+
+
+To make things simpler, the list of custodians provided by the users can be stored using existing Identity Register[broken link] under the key `custodians`. If the `custodians` list does not contain the valid kira account address then it should not be possible to activate the collaborative custody. The flag defining whether or not collaborative custody is enabled can also be stored in the Identity Registrar using the key `custody_enabled` (boolean). 
+
+
+The feature of “secret” protecting the collaborative custody mode can be a part of the generic Identity Registrar modification where additional field is used to store a “secret” `S` and `nonce`. If the secret is not provided then updating the Identity Registrar entry should not be possible. This method will add an extra (optional) feature to the Identity Registrar while solving some of the collaborative custody requirements.
+
+
+w
+
+
+_NOTE: It is allowed to implement this feature through both existing Identity Registrar module, via new, dedicated “custody module” or any other way. All solutions here are provided only as examples_
+
+
+#### Ii. Blocking & Propagating Transactions - Using Existing Module/s {#5129e70521f64a22aa84bc3926077c30}
+
+
+Once set of custodians is known and the custody is enabled we need to block all transactions originating from the custodial account unless they fulfill specific conditions. We can utilize Identity Registrar to store the signed transaction under the `custody_tx` key and assign `custodians` as verifiers. We can update Identity Registrar to allow all those actions happen in a single tx while making sure that sequence of the tx stored under `custody_tx` key would be correct. In short when `custody_enabled` is set to `true`, the only types of transactions that should be allowed would be the Identity Registrar tx’s that interact with `custody_enabled` & `custody_tx` keys. 
+
+
+Since Identity Registrar[broken link] already supports incentives for verifiers to approve/deny stored records - we do not have to implement any other incentive mechanisms and the moment sufficient number of verifiers as defined in `custody_mode` is reached we can propagate the tx stored under `custody_tx` key. If it happens that any of the verifiers rejects the `custody_tx` key before sufficient number of record approvals is reached, then regardless of the number of other approvals we should prevent tx from being propagated. Finally, the `custody_tx` key should store the result of the execution in the case where tx succeeds or fails (such as tx hash or error).
+
+
+_NOTE: The main advantage of this implementation is that it utilises already existing module and requires minimal changes, however only allows for sequential (one at a time) propagation of tx’s since before the new tx can be submitted - next tx needs to be approved._
+
+
+Alternatively to auto-propagating the message stored in the `custody_tx` we can have the unsigned message stored (or just it’s hash), verified and then user would be required to propagate it on his own. This would effectively require two separate transactions, and be less convenient and more costly for the user, but much simpler to implement since the result of the execution does not need to be stored under `custody_tx` field. We might also consider storing the tx without sequence, and in this scenario we the gain ability for proposing multiple tx’s for approval such as `custody_tx_1`, `custody_tx_2` … `custody_tx_N`. When user chooses to propagate the tx, the blockchain application would only verify if the message pre-exists in the custody module. Note that in the scenario where the sequence is not present in the tx we need to protect the user from the same tx being sent multiple times by the attacker who intercepted the user private key. 
+
+
+#### Ii. Blocking & Propagating Transactions - Alternative Implementation (dedicated Module) {#84ad0bdbb2b647ddbd34319848229166}
+
+
+Once set of custodians is known and the custody is enabled we need to block all transactions originating from the custodial account. Every blocked transaction should be saved in the dedicated transaction registrar, where tx’s should be pending until approved by number of the custodians determined by the `custody_mode`. From the user perspective sending transactions (value or otherwise) should not change, meaning that all existing tx types and CLI commands would remain exactly the same. In other words, each transaction signed by the user instead of being executed, lands in the on-chain buffer to await approvals. Advantage of the dedicated module, is that in this implementation we do not need to worry about transaction sequence numbers and we can have more flexibility when it comes to their order of approval / execution.
+
+
+The buffer size should be limited by a dedicated `max_custody_buffer_size` Network Property[broken link] (default `10`) and transaction / stored data size by `max_custody_tx_size` (default `8192` characters). Every transaction should also contain sufficient fees to incentivise all custodians (each custodian should be paid `2x` the cost of approving/denying the tx immediately at the time of the tx approval/denial). If the custodian does NOT cast a judgement then no reward should be rewarded to his account and the remaining rewards should be returned to the user. Since KIRA supports Execution Fees[broken link] it is easy and predictable to determine how much custodians should be rewarded to not lose money for approving transactions. If the user does not include sufficient fees in the transaction then the tx should be automatically rejected. 
+
+
+**Collaborative Custody Example Structure**
+
+
+```json
+{
+	"kiraXXX...XXX": {                      // account address
+		"custody_secret": "SHA256:XXX...XXX", // secret that must be provided in order to update any of the custody properties, (once revealed the secret must be replaced)
+		"custody_enabled": "true",            // defines if custody is activated for the account or not
+		"custody_mode": "2/3",                // custody mode, how many verifiers are needed for transaction to be propagated
+		"custodians": [
+			"kiraXXX...XXX",
+			"kiraYYY...YYY",
+			"kiraZZZ...ZZZ"
+		],
+		"custody_txs": [                      // list of transactions and their verification status
+			{
+				"messages": [                     // tx to be propagates
+	        "@type": "/cosmos.bank.v1beta1.MsgSend",
+	        "from_address": "kiraAAA...AAA",
+	        "to_address": "kiraBBB...BBB",
+          "memo": "Hello World"
+	        "amount": [ {
+	            "denom": "ukex",
+	            "amount": "1000"
+	          }]],
+        "fee": {                         // fee to be paid for the tx to be propagated
+					"denom": "ukex",
+          "amount": "100"
+				},
+				"reward": {                       // reward that will be split between custodians for each approval (if no vote is casted then no reward is given) 
+					"denom": "ukex",
+          "amount": "600"
+				},
+				"verifications": {
+					"kiraXXX...XXX": "approved",
+					"kiraYYY...YYY": "denied",
+					"kiraZZZ...ZZZ": "pending"
+				},
+				"result": "rejected"             // result of the transaction execution - hash, status or error message 
+			}, { ... }, ...
+		]
+	}, 
+	"kiraXXX...XXX": { 	... }, ... }
+```
+
+
+#### Iii. Password Protected Token Transfers {#b396e83480a94fe780abd9b8287865c1}
+
+
+To enable recipient verification we should create a new token transfer type which will require the beneficiary to “claim” the funds by providing a secret supplied to him off-chain. The protected bank tx should have a field containing hash of a hash of a secret `S == SHA256(SHA256(secret))` as well as expiry time in seconds after which tokens can be claimed back by the sender. The transfer will be pending as long as it is cancelled by the sender, recipient or expired. In order for beneficiary to claim the incoming funds, he will have to submit a solution `X`, such that `SHA256(X) == S`. 
+
+
+It is very important to protect the users who reuse the same secrets from phishing attacks where attacker might have somehow acquired the secret or solution `X` by noticing a repeating pattern. To prevent this issue we should include a random, known nonce in the transaction (for example a block time), so that `S == SHA256(SHA256(secret + nonce))`. The beneficiary can query the nonce and then combine it with shared secret to calculate solution `X`. 
+
+
+Protected transaction should contain a memo similar to the one that can be included in the standard bank tx as well as a `reversible` field that if set to true would allow the sender to cancel/reverse the protected transaction before it is claimed, effectively allowing sender to redeem back incorrectly sent amounts, correct the mistake and transfer a new amount again.
+
+
+One of the main disadvantages of the protected transfers is that accounts that have 0 balance or otherwise insufficient amount of funds to pay claim/reject tx fees would not be able to receive/reject payments. For this reason we should implement a fee-less tx mechanism, that would deposit a small amount of tokens to a receiving account. The protected tx should fail if account where we are transfering money does not exist / has insufficient balance or if small, separate amount of funds for executing the transfer is not included. The CLI command can have a separate flag for including an extra amount for a fee payments to empty accounts, but it should be noted that just like in the case of standard transaction fees there should be a protection mechanism which prevents sending extra fee amounts different then specified by Execution Fee[broken link] module - controlling cost of executing transactions (otherwise someone could accidentally transfer their entire account balance as an extra fee / mistake it for the base amount to transfer).
+
+
+#### Iv. Address Whitelist & Transfer Limits {#3d831e284bd746f5987795ea0fc2fa4d}
+
+
+Similarly to other account protection methods, the address whitelist can be created by utilising  Identity Registrar[broken link]. Whitelisted accounts can be added as comma separated list under the identity registrar keys with a dedicated prefix, such as `address_whitelist` .  If the implementation of the identity registrar already supports protection with secrets then there would be no need for a separate in-module store, otherwise to update the whitelist user should submit a solution to a riddle `X`, such that `SHA256(X) == S` where secret `S == SHA256(SHA256(secret))`, furthermore the secret should be protected by a `nonce` so that `S` can be updated every time the whitelist changes while the underlying secret does not have to change. Additionally a key `address_whitelist_enabled` should be created that would control with boolean value whether or not whitelist is honored.  
+
+
+If the `address_whitelist_enabled`is set to true, then all value transfers should be blocked unless the beneficiary/destination account is present under any of the `address_whitelist`. Since Identity registrar limits the maximum number of character that can be stored under any specific key, we must also add a rule exception that would allow to store up to `256` kira addresses (11008 characters). It must be also validated that that the whitelist can only contain valid and non-repeating kira addresses. 
+
+
+The transfer limits can be implemented in similar manner to the address whitelist, the `transfer_limits_enabled` can control if the transfer limits are enforced, while `transfer_limits` represent a comma separated list of token denoms and the corresponding maximum amount of every specific token that can be moved within specific time period (minutes, hours or days), for example: `1000000 ukex 24h,  1000000 aeth 7d, 100 abtc 15m`. Token transfers should result in the index being updated that would track the amounts being sent from the account (including fees paid) and mark amounts & the corresponding time. Finally `transfer_limits` and `transfer_limits_enabled` should have a `24h` time lock, meaning that even with compromised secret, the changes should not be applied immediately and allow the attacker to withdraw all funds. (The timelock could be new feature in the Identity registrar and apply to all keys when activated.)
+
+
+To calculate how much can be transferred with limits all we need to know is the last unix timestamp, last transfer amount & the current limit. We should implement this in such a way that per each one token only one record is stored that reflects the last withdrawal status.
+
+
+**Example Input**
+
+
+Limit: `1000000 ukex 24h`
+
+
+Status: `750000 ukex 1654666563`
+
+
+New tx (including fees): `50000 ukex`
+
+
+Current timestamp: `1654709763`
+
+
+**Pseudo Algorithm & Output**
+
+1. Calculate what is the amount of coins per 1 second that expire from the status: `1000000ukex / (24*3600s) ~ 11.57 [ukex/s]`
+2. Calculate how many seconds passed since last status: `1654709763 - 1654666563 = 43200`
+3. Add amount in the last tx with value in the status and subtract from it the amount that expire: `max(0,750000 + 50000 - (43200*11.57)) = 300176`
+4. New Status:  `300176 ukex 1654709763`
+
+_NOTE: It is allowed to implement this feature through both existing Identity Registrar module, via new, dedicated “custody module” or any other way. All solutions here are provided only as examples_
+
+
+### Transactions & Queries  {#cb9349e3e74240a888a91d078cd1accf}
+
+
+List of essential transactions & queries
+
+- `custody-registrar-query` - list all details regarding custody of a specific account, including all incoming/outgoing transactions to/from specific account and their status. We should allow verifier to easily check if they have any pending tx’es to sign as well as the beneficiary so that UI can easily find & display incoming transactions.
+- `custody-accounts-list` - list all accounts which use custody module
+- `custody-registrar-upsert` - update custody registrar, such as enable, disable, clear_all/add/remove custodians (note that it should be possible to add or remove 1/N account at the time and not update all records at once bc their number can be too large to store)
+- `custody-registrar-clean-txs` - remove one or many/all transactions from the registrar
+- `custody-registrar-propagate-txs (optional)` - propagate one, many or all approved transactions - this should be optional if transactions can be automatically propagated
+- `bank-tx-send-protected` - send a password protected transaction
+- `bank-tx-query-protected` - query all pending transactions that you are sending or receiving
+- `bank-tx-claim-protected` - claim protected transaction by submitting solution `X`
+- `bank-tx-reject-protected` - reject incoming protected transaction or reverse the outgoing transaction if `reversible` is set to true
+- `account-whitelist-upsert` - update accounts whitelist, such as enable, disable, clear_all/add/remove accounts (note that it should be possible to add or remove 1/N account at the time and not update all records at once bc their number can be too large to store)
+- `account-whitelist-query`- list whitelisted accounts
+- `transfer-limits-upsert` - update accounts whitelist, such as enable, disable, define limits (note that it should be possible to add or remove 1/N rules at the time and not update all records at once bc their number can be too large to store)
+- `transfer-limits-query` - show all information about user defined limits as well as the last withdrawal status
+
+_NOTE: Always ensure that all inputs are validated, such as Bech32 validity of account addresses, token denominations, time periods (d,h,m) . Make sure to also create dedicated unit tests in golang & corresponding integration tests in bash._
+
+
+### Notes {#71c2679d7bc9446985378710ca609b99}
+
+- Whether or not Identity Registrar is utilised for the purpose of any of the tasks listed in this improvement proposal, we should add a support for “secret” protected entries.
+
+### Fixes {#86d76ee0f1ad4abcb50ef15eeefba005}
+
+- It was reported that UX for custody using secrets is not friendly, additionally the commit & reveal scheme was not implemented in the first release, causing potential issue with attacker monitoring the mempool and frontrunning the tx. Following changes will be implemented:
+	- only custody address can modify the custodians
+	- to update custody address you need to use custody address itself
+	- if custody address is removed but custodians were chosen, only those custodians can help you to modify the custody address

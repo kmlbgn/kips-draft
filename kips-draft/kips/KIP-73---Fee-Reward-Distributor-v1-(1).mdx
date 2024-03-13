@@ -1,0 +1,54 @@
+---
+title: KIP-73 - Fee Reward Distributor v1 (1)
+sidebar_position: 3
+slug: /9f592e8a-6a6f-4a62-a2a9-0c80e921fdb2
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+
+## Fee Reward Distributor V1 {#31de1840345944ac8ad003c7e2190393}
+
+
+In KIRA execution fees[broken link] (paid in one or many different fee tokens[broken link]) should be split **50/50** between stakeholders & validators, initially however there will be NO staking module available thus it is NOT possible to distribute the fee rewards to the delegators. On the other hand distribution of network fees to validators should be possible because it is NOT related to the amount of tokens staked, instead **ALL validators receive equal share of all fee rewards regardless of their wealth, stake or number of delegators**.
+
+
+We should create a fee rewards distribution module which periodically distributes **X%** of all the accumulated execution fee rewards (paid by users) to all **ACTIVE** validators. If the validator is NOT ACTIVE then the rewards should NOT be granted to the validator account. The exact percentage **(default 50%)** of fee rewards `validators_fee_share` (decimal between 0 and 1) that should be granted to validators MUST be configurable in the network properties[broken link]. This way during mainnet launch we can set this value to 100% and later on modify when the staking module goes live.
+
+
+The main difficulty is that depending on the size of the validator set and denomination of a specific token it might NOT be possible to transfer/claim the tokens by the validator, simply because a given token might not be sufficiently divisible for it to be split equally. Furthermore although in KIRA chances to produce a new blocks are equal among all validators we can NOT simply distribute rewards to the current block proposer as if that was the case then the block proposers could use the mechanism to spam the chain at half the price or otherwise be incentivised to DDOS other validators so that they end up being the block proposer.
+
+
+By far the simplest method is to average distribution over the period of N blocks (configurable in the network properties). To achieve this we will accumulate all the rewards over the last period N and then distribute the rewards. We will begin by saving (snaping) the state of the fee reward balances accumulated in the Fee Rewards Distribution v1 module and associate that state with the block number **B** (`snap_block`) and the corresponding period **N** (`snap_period`). As long as the current block **C** is less than `B + N` we will be distributing to block-proposing validators number of tokens NOT greater then `floor(amount / N)` for each token in the `snap_balances` (note we should only send non 0 amounts). After the period of `B + N`we will snapshot the balances again, update values `B`, `N` & repeat the process.
+
+
+```bash
+{
+  snap_period: <integer>,
+  snap_block: <integer>,
+	snap_balances: [ { 
+		denom: <string>, 
+		amount: <integer> }, 
+	{ ... }, ... ]
+}
+```
+
+
+In every NEW block we should distribute the rewards to the validator who is producing the CURRENT block so that we can visualize the rewards distro live in the network explorer.
+
+
+To make the distribution fair we should only reward the validator for the blocks produced during the `snap_period` this means that if for example the validator being rewarded participated in production of only `10` blocks while the `snap_period` is `100` then he should only receive `10/100 == 10%` of the maximum reward that he is eligible for in the current block. 
+
+
+To calculate percentage of blocks produced by the validator in the period `N` we need to either iterate last `N` blocks and count the number of times that given validator participated in the block production (`blocks_produced`) then divide them by `N` or if that is computationally not feasible utilize the ratio of `missed_blocks_counter` & `produced_block_cunter`, to get a long-term running average. 
+
+
+The final rewards amount distributed should be equal to either
+
+- `floor((amount/snap_period)*(blocks_produced/snap_period))` or
+- `floor((amount/snap_period)*(1-(missed_blocks_counter/produced_block_counter))`
+
+This way we will only reward the validator for blocks produced and thus further incentivise staying online. If we didn’t had this approach validators could abuse the system to just claim the UBI rewards without any consequences for staying offline.
+

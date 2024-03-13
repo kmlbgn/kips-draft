@@ -1,0 +1,79 @@
+---
+title: KIP-71 - Spending Pools (1)
+sidebar_position: 5
+slug: /b4a8a0cc-c526-482c-9224-8e974a8d614c
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+
+## Spending Pools {#4b782e2d089943bd9ded7d937061eb4b}
+
+
+Spending Pools are essential to incentivize various network actors for their work. The main objective of the spending pool is to enable simple token distribution between many accounts in accordance with simple token claiming rules.  Spending pools can be associated with one or many `owners` - governance-defined roles[broken link] or individual KIRA accounts controlling the distribution of the specific token. Accounts that can claim the rewards from the spending pool are called `beneficiaries` and can be defined as roles[broken link] or individual KIRA accounts. One of the first use cases of the spending pool will be the distribution of the universal basic income to the KIRA validators & governance members. 
+
+
+The spending pool should be controlled using custom pool proposals that can be raised & voted on only by the pool owners. Any KIRA account should be able to create a spending pool and seed it with funds, thus becoming the first account in the list of `owners`.  The owner of the spending pool should be able to assign other `owners`, define rules of the pool operation as well as `beneficiaries` who can claim the tokens.
+
+
+It is essential that before work on the KIP-71 is started a Remove Proposals During Upgrades[broken link] task must implement otherwise genesis file would be spammed with hundreds of proposals.
+
+
+### Implementation {#76768b571b5442a6990c22153b03da3f}
+
+
+Create a Spending Pool Registry with associated identifiers mapping to a list of properties defining how the pool operates:
+
+
+```bash
+<pool-name-1>: {
+    claim-start: <unix-timestamp>,
+    claim-end: <unix-timestamp>, 
+    claim-expire: <seconds>,
+    token: <string-name>,
+    rate: <float-amount>,
+    vote-quorum: <percentage>,    # default: 51%
+    vote-period: <seconds>,       # default: 600s
+    vote-enactment: <seconds>,    # default: 300s
+    owners: {
+			roles: [ <role-name>, ... ]
+      accounts: [ <account-addr>, ... ]
+		},
+		beneficiaries: {
+			roles: [ <role-name>, ... ], 
+      accounts: [ <account-addr>, ... ]
+		},
+    claims: [
+     { account: <account-addr>, date: <unix-timestamp>}, { ... }, ...  
+   ] 
+},
+<pool-name-2>: { ... }, ...
+```
+
+- `claim-start` & `claim-end` - defines the exact time period (Unix timestamps) between which tokens can be claimed from the pool, allowing for a precise funds distribution.
+- `claim-expire` - time period after which ability of beneficiary to claim tokens expires. If the date of the last claim is longer than `claim-expire` than account is removed from claims list.
+- `token` - name of the token that can be distributed.
+- `rate` - rate of distribution in the smallest token denomination per `1` second (this value can be a float number, smaller than actual denomination)
+- `vote-quorum` - pool specific `%` of owner accounts that must vote `YES` or `NO` for any of the pool proposals to be valid.
+- `vote-period` - period of time in `seconds` that any of the pool proposals must last before passing or being rejected
+- `vote-enactment` - period of time that must pass before any of the pool proposal is enacted
+- `owners` - defines a list of accounts/roles controlling the spending pool via “governance-like” proposals
+- `beneficiaries` - defines set of accounts/roles to which funds can be distributed
+- `claims` - list of beneficiary accounts that claimed or registered to claim tokens from the pool as well as index of when the last time tokens were claimed.
+
+### Functions {#0182ccc93a584f92ada0135257f1854b}
+
+- `spending-pool-create`- a function to allow creating a new spending pool. This function can be sent by any account. The person sending the transaction automatically becomes the pool owner.  The original owner should provide a unique pool name when sending create tx.
+- `spending-pool-deposit` - a function to allow depositing tokens to the pool address (name).  Any KIRA address should be able to call this function and deposit tokens.
+- `proposal-spending-pool-update` - a function to create a proposal allowing modification of the existing spending pool, adding owners, beneficiaries, or otherwise editing any of the existing properties.
+- `proposal-spending-pool-distribute` - force distribution of tokens to all beneficiaries registered in the claims array (this function should be automatically triggered before upgrades are executed)
+- `proposal-spending-pool-withdraw` - proposal allowing withdrawal of funds from the pool to one or many specified accounts. Withdrawal should only be possible if the receiving account/s are on the list of registered beneficiaries.
+- `spending-pool-register` - a function to register beneficiary account to be eligible for claims
+- `spending-pool-claim` - a function to allow claiming tokens from the pool. Only `beneficiaries` should be able to send this transaction. Funds can be claimed only for the period between current block time and value set in the claims property in accordance to the current distribution rate. If the pool doesn't have a sufficient balance of a specific token as defined by `tokens` property then that specific token should NOT be sent in any amount. If the pool has sufficient funds as defined by the `amount` in the `tokens` property then exact amount owed should be sent to the beneficiary. All tokens that can be sent should be sent all at once to the account that is claiming them. If the claim expiration period elapsed and funds were NOT claimed by the beneficiary then the funds will NOT be sent. Beneficiary will only receive tokens if he already registered and his account is present in the `claims` array. Claiming of specific token should be only possible if and only if the spending pool has sufficient funds to distribute funds to ALL accounts eligible for claiming them (either all eligible accounts can claim a specific token or no one).
+- `spending-pool-deposit` - function allowing deposit of tokens into the pool, only asset defined by `token` field should be possible to be deposited. Anyone should be able to call this function.
+- `query-pools` - query list of pool names
+- `query-pool` - query pool by name
+- `query-pool-proposals` - query pool proposals by name
+- `query-pools-by-account` - query list of pool names where specific kira account can register its claim or otherwise claim tokens from

@@ -1,0 +1,104 @@
+---
+title: KIP-75 - Staking Module Part 2 (1)
+sidebar_position: 1
+slug: /de0bfa2b-303c-4b4f-b0d1-03abdf5288a4
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+
+## Slashing {#afb68f34c71c411685a4cca343445386}
+
+
+### Overview {#fec21707aece48bdb899b142b309cec5}
+
+
+Users must vouch with their asset for the honesty of the individual validators so that other network participants can trust the entire network to secure their assets. If the validators were found to be malicious tokens at stake must be slashed, otherwise there would be “nothing at stake” and validators could collude without any consequences. Opposed to other PoS in KIRA there is only one slashing condition: double-signing (producing multiple blocks at the same height) while downtime (validator going offline) is NOT punishable and will NOT result in slashing. There are however circumstances under which we should not be slashing even if double-signing takes place, for example if the misbehaviour of the validator is not intentional and can't impact the network operations. Best way to prevent accidental slashes is to ONLY allow slashing action to take place IF AND ONLY IF multiple validators double-sign at the same time or within the same time window. Slashing should also be governance assisted, meaning that the amount that should be slashed must be determined by the governance and evaluated on case to case basis to prevent cases where software bugs could result in loss of the delegator assets. 
+
+
+### Evaluating Slashing Conditions & Execution Logic {#bf1c86369baf44db8454d42186449c86}
+
+
+In order to trigger evaluation of the slashing event we will utilize jailing functionality of the existing slashing module. When the status of the validator changes to `jailed` we should count the the total number of validators who were jailed within `slashing_period` (e.g. default `3600s`), where the `slashing_period` must be smaller than `unstaking_period`. If the `unstaking_period` already elapsed then slashing is not possible anyway, because tokens would already be ustaked by the delegators. If the total number of validators within `slashing_period` exceeds `max_jailed_percentage` (e.g. default `25%` of all active validators) then a new governance slashing proposal should be raised. The `slashing_period` and `max_jailed_percentage` should be added to the network properties. 
+
+
+**It is essential that if the the validator status changes from** **`active`** **to any other** (`inactive`, `paused`, `jailed`) **then the staking pool of that validator should NOT be accepting any more delegations**. Only undelegations should be possible. If this rule is not enforced then delegators who joined the staking pool after the jailing occured can be slashed.
+
+
+For each validator who got jailed within `slashing_period` where `max_jailed_percentage` was reached we should create an individual `SlashValidator` proposal. If the `SlashValidator` proposal for a specific validator already exists then we should NOT raise a new one so that at any point of time there is only be one `SlashValidator` proposal per one validator and every case can be individually judged. It is also important that if `SlashValidator` proposal is raised then any active `UnjailValidator` proposals related to the same validator is cancelled and that no new `UnjailValidator` proposals can be raised until `SlashValidator` is finalized. If the `UnjailValidator` were possible to be passed before `SlashValidator` is finalized then the malicious validator would be able to start producing blocks.
+
+
+While the `SlashValidator` proposal is ongoing the validator being investigated should have the ability to submit a counterevidence (`refutation`) in the form of string, for example URL or CID to IPFS resource. The counter-evidence once submitted should not be possible to be updated.
+
+
+**Slashing proposal should have one of the following results:**
+
+- Ending without reaching quorum - validator is not slashed and can be unjailed if `UnjailValidator` proposal is raised
+- Ending by reaching quorum
+	- Governance decided to not slash - validator is not slashed and can be unjailed if `UnjailValidator` proposal is raised
+	- Governance decided to slash - validator is slashed by a specific % decided by the governance and can NOT be unjailed
+
+In the case where slashing occurs the % of assets to be slashed should be limited to `max_slashing_percentage` (configurable in the network properties, minimum `0` - `0%`, maximum `1` - `100%`, default - `0.5`). It should never be allowed to slash more than `max_slashing_percentage` to ensure that delegators have a quantifiable manner of measuring their potential risks when staking. The exact percentage by which any particular validator should be lashed should be equal to a [**median**](https://en.wikipedia.org/wiki/Median) of all slashing votes submitted by the governance members who have permission allowing them to vote on the `SlashValidator` proposal. Finally **for the slashing to occur more than** **`50%`** **of all active participants in the proposal process must vote with non 0 slash** and only validators with the `active` status should be allowed to cast their vote. If the `SlashValidator` proposal voter is not a validator then the active status requirement does not apply.
+
+
+**Example slashing proposal results:**
+
+
+If the `max_slashing_percentage` is set to `0.1` and the slashing votes are: `0, 0, 0, 0, 0, 0.5, 1, 0.5, 0.25, 0.25, 0.25, 0.75, 0.01, 0, 0.25`  then the [median ](https://www.calculator.net/mean-median-mode-range-calculator.html)is `0.25` but the final slashing % is `0.1`.
+
+
+If the `max_slashing_percentage` is set to `0.5` and the slashing votes are: `0, 0, 0, 0.01, 0.01, 0.03, 0.03, 1, 0.04, 0.05, 0.07, 0.08, 1, 0.1` then the [median ](https://www.calculator.net/mean-median-mode-range-calculator.html)and the final slashing is `3.5%`
+
+
+If the `max_slashing_percentage` is set to `0.25` and the slashing votes are: `0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.5, 0.01, 0, 0, 1`, then the [median ](https://www.calculator.net/mean-median-mode-range-calculator.html)is `0` and no slashing should take place
+
+
+**Staking Pool Slashing**
+
+
+Tokens that were NOT created natively on the KIRA network can NOT be burned/destroyed by the KIRA chain, for that reason we will transfer all “slashed” tokens to a governance controlled community spending pool (KIP-71) where the decision can be made regarding their final fate (giveway to community, refund in case of unfair slashing, etc).  It is also import that during the slashing process we utilize a [ceiling function](https://en.wikipedia.org/wiki/Floor_and_ceiling_functions), for example `samolean_slash_amount = cailing(staked_samoleans * slasing_percentage) = cailing( 5 * 0.035) = 1` since we can NOT transfer 0 amounts and singular units of the tokens might be at stake (for example a % slashing of the NFT or otherwise singular token should result in the entire token being slashed). 
+
+
+After slashing the pool should have a property defining by what % was it slashed and as result of which governance proposal.
+
+
+**Slashing Proposal Example Structure**
+
+
+```json
+{
+	"offender": "kiraXXX...XXX",           // validator address that commited a fault
+	"staking_pool_id": <integer>,
+  "misbehaviour_time": <timestamp>,      // time at which misbehaviour occured
+  "misbehaviour_type": "double-signing", //string type of evidence (in the future there can be different types)
+  "jailed_percentage": <decimal>,        // percentage of validators that was jailed (colluded)
+  "colluders": [                         // list of validator who colluded with a misbehaving validator
+		"kiraXXX...XXX",
+		"kiraXXX...XXX",
+		...,
+		"kiraXXX...XXX"
+	],
+  "refutation": "<string/url/CID>"       // validator supplied counter-evidence proving that his behaviour was not intentionally malicious,
+  "votes": [
+    { "voter": "kiraXXX...XXX", "slash": <decimal> },
+		{ "voter": "kiraXXX...XXX", "slash": 0.5 },
+		...
+		{ "voter": "kiraXXX...XXX", "slash": 0 }
+	]
+}
+```
+
+
+### Transactions & Queries  {#7bbe5d26d90d484a8177ff4a7cce15ed}
+
+
+List of essential transactions & queries
+
+- `query-slash-proposals` - list all active slashing proposals
+- `query-slashed-staking-pools` - list all staking pools that were slashed
+- `query-active-staking-pools` - list all staking pools to which tokens can be delegated
+- `query-inactive-staking-pools` - list all staking pools to which tokens can NOT be delegated because validator is not active
+- `vote-slashing-proposal` - cast a vote on the slashing proposal - dedicated permission should be required to cast a vote and voter should provide as an input a percentage (decimal value &lt;0, 1&gt;) by which staking pool should be slashed. **It is important that validator being slashed as well as any of the colluders listed in the proposal should NOT be allowed to vote on any slashing proposals**.
+- `refute-slashing-proposal` - only validator whose staking pool is being slashed should be able to submit refute transaction containing a string (max 2048 characters) with URL or CID explaining the circumstances under which the fault occured. The refutation string should be then attached to the Slashing Proposal for all voters too see.
