@@ -18,8 +18,8 @@ jobs:
 
       - name: Check for KIP deletions
         run: |
-          git fetch origin master:master
-          DELETED_FILES=$(git diff --name-status master..$GITHUB_SHA -- kips/ | grep ^D | wc -l)
+          git fetch origin master
+          DELETED_FILES=$(git diff --name-status origin/master...$GITHUB_SHA -- kips/ | grep ^D | wc -l)
           if [ "$DELETED_FILES" -gt 0 ]; then
             echo "Deletion of KIP files is not allowed."
             exit 1
