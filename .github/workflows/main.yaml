@@ -1,5 +1,8 @@
 name: Process KIP Submissions
 
+permissions:
+  contents: write
+
 on:
   pull_request:
     branches:
