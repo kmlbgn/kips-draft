@@ -1,3 +1,3 @@
 # Some Header
 
-Some introductory ok...
+Some introductory ok
