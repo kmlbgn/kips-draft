@@ -1,0 +1,46 @@
+name: Pre-Merge Checks
+
+on: pull_request
+
+jobs:
+  check-deletions-and-integrity:
+    runs-on: ubuntu-latest
+    if: startsWith(github.head_ref, 'submission/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 2 # Necessary to ensure history for diffs
+      
+    - name: Check for deletions in 'kips' folder
+      run: |
+        git fetch origin master # Fetch the base branch to compare against
+        DELETED_FILES=$(git diff --name-status origin/master...HEAD -- kips/ | grep ^D | wc -l)
+        if [ "$DELETED_FILES" -gt 0 ]; then
+          echo "Deletion of files in 'kips' folder is not allowed."
+          exit 1
+        fi
+
+    - name: Check workflow file integrity
+      env:
+        WORKFLOW_FILE_PATH: .github/workflows/main.yml
+        KNOWN_GOOD_HASH: ${{ secrets.WORKFLOW_FILE_HASH }}
+      run: |
+        CURRENT_HASH=$(sha256sum $WORKFLOW_FILE_PATH | awk '{print $1}')
+        if [ "$CURRENT_HASH" != "$KNOWN_GOOD_HASH" ]; then
+          echo "The workflow file $WORKFLOW_FILE_PATH has been tampered with!"
+          exit 1
+        fi
+
+- name: Check workflows directory integrity
+  run: |
+    # Navigate to the workflows directory
+    cd .github/workflows/
+    # Concatenate all file contents (sorted by name) and compute a single hash
+    CURRENT_HASH=$(find . -type f -exec cat {} + | sort | sha256sum | awk '{print $1}')
+    echo "Computed hash: $CURRENT_HASH"
+    # Compare with known good hash
+    if [ "$CURRENT_HASH" != ${{ secrets.WORKFLOWS_HASH }} ]; then
+      echo "The .github/workflows/ directory has been tampered with!"
+      exit 1
+    fi
