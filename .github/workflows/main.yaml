@@ -1,5 +1,8 @@
 name: Process KIP Submissions
 
+permissions:
+  contents: write
+
 on:
   pull_request:
     branches:
@@ -17,13 +20,7 @@ jobs:
           fetch-depth: 0 # Fetch all history for all branches and tags
 
       - name: Check for KIP deletions
-        run: |
-          git fetch origin master
-          DELETED_FILES=$(git diff --name-status origin/master...$GITHUB_SHA -- kips/ | grep ^D | wc -l)
-          if [ "$DELETED_FILES" -gt 0 ]; then
-            echo "Deletion of KIP files is not allowed."
-            exit 1
-          fi
+        uses: ./.github/workflows/checks.yaml
       
       - name: Update README
         run: |
