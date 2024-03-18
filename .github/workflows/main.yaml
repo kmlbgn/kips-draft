@@ -31,7 +31,7 @@ jobs:
       - name: Check workflows directory integrity
         run: |
           # Navigate to the workflows directory
-          cd .github/
+          cd .github/workflows/
           # Concatenate all file contents (sorted by name) and compute a single hash
           CURRENT_HASH=$(find . -type f -exec cat {} + | sort | sha256sum | awk '{print $1}')
           echo "Computed hash: $CURRENT_HASH"
@@ -53,7 +53,7 @@ jobs:
       - name: Update README
         run: |
           echo 'Updating README with new KIP entries...'
-          python .github/scripts/update_master.py
+          python .github/workflows/update_master.py
 
       - name: Push changes
         run: |
