@@ -3,12 +3,12 @@ name: Process KIP Submissions
 on:
   pull_request:
     branches:
-      - submissions
+      - master
     types: [closed]
 
 jobs:
   update-readme:
-    if: github.event.pull_request.merged == true
+    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'submission/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
