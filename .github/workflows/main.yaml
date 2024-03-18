@@ -61,4 +61,4 @@ jobs:
           git config --local user.name "GitHub Action"
           git add README.md
           git commit -m "Update README with new KIP entries"
-          git push https://${{ secrets.ACTION_TOKEN }}@github.com/kmlbgn/repository.git master --force
+          git push https://${{ secrets.ACTION_TOKEN }}@github.com/kmlbgn/kips-draft.git master --force
