@@ -1,6 +1,6 @@
 # Some Header
 
-Some introductory text.
+Some introductory text..
 
 ## KIP List
 
