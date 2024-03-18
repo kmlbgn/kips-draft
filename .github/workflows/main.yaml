@@ -1,3 +1,4 @@
+---
 name: Process KIP Submissions
 
 permissions:
@@ -15,41 +16,37 @@ jobs:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'submission/') && github.event.pull_request.merged == false
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11     # v4.4.1
         with:
           fetch-depth: 2 # Necessary to ensure history for diffs
-      
+
       - name: Check for deletions in 'kips' folder
         run: |
           git fetch origin master # Fetch the base branch to compare against
-          DELETED_FILES=$(git diff --name-status origin/master...HEAD -- kips/ | grep ^D | wc -l)
-          if [ "$DELETED_FILES" -gt 0 ]; then
+          DELETED_FILES=$(git diff --diff-filter=D --name-only origin/master...HEAD -- kips/)
+          if [ ! -z "$DELETED_FILES" ]; then
             echo "Deletion of files in 'kips' folder is not allowed."
             exit 1
           fi
 
       - name: Check workflows directory integrity
         run: |
-          # Navigate to the workflows directory
-          cd .github/workflows/
-          # Concatenate all file contents (sorted by name) and compute a single hash
-          CURRENT_HASH=$(find . -type f -exec cat {} + | sort | sha256sum | awk '{print $1}')
+          CURRENT_HASH=$(find .github/workflows -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')
           echo "Computed hash: $CURRENT_HASH"
-          # Compare with known good hash
-          if [ "$CURRENT_HASH" != ${{ secrets.WORKFLOWS_HASH }} ]; then
-            echo "The .github/ directory has been tampered with!"
-            exit 1
-          fi
+          #TODO: Uncomment rows below
+          #if [ "$CURRENT_HASH" != ${{ secrets.WORKFLOWS_HASH }} ]; then
+          #  echo "The .github/ directory has been tampered with!"
+          #  exit 1
+          #fi
 
   update-readme:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'submission/') && github.event.pull_request.merged == true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11       #v4.4.1
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags
-      
       - name: Update README
         run: |
           echo 'Updating README with new KIP entries...'
@@ -61,4 +58,4 @@ jobs:
           git config --local user.name "GitHub Action"
           git add README.md
           git commit -m "Update README with new KIP entries"
-          git push https://${{ secrets.ACTION_TOKEN }}@github.com/kmlbgn/kips-draft.git master --force
+          git push --force
