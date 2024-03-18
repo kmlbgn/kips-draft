@@ -7,18 +7,18 @@ on:
   pull_request:
     branches:
       - master
-    types: [closed]
+    types: [opened, closed] # Trigger when PR is opened and closed
 
 jobs:
   check-deletions-and-integrity:
     runs-on: ubuntu-latest
-    if: startsWith(github.head_ref, 'submission/')
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'submission/') && github.event.pull_request.merged == false
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
           fetch-depth: 2 # Necessary to ensure history for diffs
-    
+      
       - name: Check for deletions in 'kips' folder
         run: |
           git fetch origin master # Fetch the base branch to compare against
@@ -42,8 +42,8 @@ jobs:
           fi
 
   update-readme:
-    if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'submission/')
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'submission/') && github.event.pull_request.merged == true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -62,4 +62,3 @@ jobs:
           git add README.md
           git commit -m "Update README with new KIP entries"
           git push
-
