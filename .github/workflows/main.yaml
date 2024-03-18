@@ -10,7 +10,7 @@ on:
     types: [opened, closed] # Trigger when PR is opened and closed
 
 jobs:
-  check-deletions:
+  check-deletions-and-integrity:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'submission/') && github.event.pull_request.merged == false
     steps:
@@ -25,6 +25,19 @@ jobs:
           DELETED_FILES=$(git diff --name-status origin/master...HEAD -- kips/ | grep ^D | wc -l)
           if [ "$DELETED_FILES" -gt 0 ]; then
             echo "Deletion of files in 'kips' folder is not allowed."
+            exit 1
+          fi
+
+      - name: Check workflows directory integrity
+        run: |
+          # Navigate to the workflows directory
+          cd .github/
+          # Concatenate all file contents (sorted by name) and compute a single hash
+          CURRENT_HASH=$(find . -type f -exec cat {} + | sort | sha256sum | awk '{print $1}')
+          echo "Computed hash: $CURRENT_HASH"
+          # Compare with known good hash
+          if [ "$CURRENT_HASH" != ${{ secrets.WORKFLOWS_HASH }} ]; then
+            echo "The .github/ directory has been tampered with!"
             exit 1
           fi
 
