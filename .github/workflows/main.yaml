@@ -20,7 +20,7 @@ jobs:
           fetch-depth: 0 # Fetch all history for all branches and tags
 
       - name: Check for KIP deletions
-        uses: ./.github/workflows/checks.yaml
+        uses: ./.github/workflows/checks.yaml#check-deletions-and-integrity:
       
       - name: Update README
         run: |
