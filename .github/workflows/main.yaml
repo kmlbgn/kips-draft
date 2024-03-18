@@ -7,28 +7,33 @@ on:
     types: [closed]
 
 jobs:
-  update-readme:
+  check-and-update:
     if: github.event.pull_request.merged == true && startsWith(github.head_ref, 'submission/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
         with:
-          ref: master
+          fetch-depth: 0 # Fetch all history for all branches and tags
 
-      - name: Copy KIP Files
+      - name: Check for KIP deletions
         run: |
-          cp -R KIP/ ../KIP/
-          
+          git fetch origin master:master
+          DELETED_FILES=$(git diff --name-status master..$GITHUB_SHA -- kips/ | grep ^D | wc -l)
+          if [ "$DELETED_FILES" -gt 0 ]; then
+            echo "Deletion of KIP files is not allowed."
+            exit 1
+          fi
+      
       - name: Update README
         run: |
           echo 'Updating README with new KIP entries...'
-          python .github/scripts/update_readme.py
+          python .github/scripts/update_master.py
 
       - name: Push changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add -A
+          git add README.md
           git commit -m "Update README with new KIP entries"
-          git push origin master
+          git push
