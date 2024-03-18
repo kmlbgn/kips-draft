@@ -11,7 +11,7 @@ with open(readme_path, 'r') as file:
     readme_content = file.readlines()
 
 # Find the place in the README to insert the new KIPs
-insertion_index = readme_content.index('KIP List\n') + 1
+insertion_index = readme_content.index('## KIP List\n') + 1
 
 # Add new KIP entries
 for kip_file in kip_files:
