@@ -1,6 +1,6 @@
 # Some Header
 
-Some introductory ok...
+Some introductory ok....
 
 ## KIP List
 - KIP-74---Staking-Module-Part-1-(1)x
