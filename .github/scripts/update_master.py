@@ -1,6 +1,6 @@
 import os
 
-kip_directory = '../kips/'
+kip_directory = 'kips/'
 readme_path = 'README.md'
 
 # Fetch the list of KIP files
