@@ -60,5 +60,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add README.md
-          git push https://${{ secrets.ACTION_TOKEN }}@github.com/username/repository.git HEAD:master --force
+          git push https://${{ secrets.ACTION_TOKEN }}@github.com/kmlbgn/kips-draft.git HEAD:master --force
           git push
